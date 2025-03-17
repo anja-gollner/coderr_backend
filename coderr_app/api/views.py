@@ -13,6 +13,7 @@ from django.contrib.auth.models import User
 from django.db.models import Avg
 from django.db.models import Min, Q
 from rest_framework.exceptions import PermissionDenied, AuthenticationFailed
+from rest_framework import serializers
 
 
 
@@ -234,6 +235,11 @@ class ReviewViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Automatically assign the logged-in user as the reviewer."""
+        business_user = serializer.validated_data['business_user']
+
+        if Review.objects.filter(reviewer=self.request.user, business_user=business_user).exists():
+            raise serializers.ValidationError({"detail": "Du hast bereits eine Bewertung für diesen Geschäftsbenutzer abgegeben."})
+     
         serializer.save(reviewer=self.request.user)
 
     def get_queryset(self):
