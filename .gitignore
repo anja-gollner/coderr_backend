@@ -1,0 +1,58 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+*.venv
+*.env
+
+# Django / DRF specific files
+*.log
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# Environment variables / secrets
+.env
+*.env
+config/settings/local.py
+config/settings/*.pyc
+
+# PyCharm project files
+.idea/
+
+# VS Code settings
+.vscode/
+
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Migrations cache 
+**/migrations/*.pyc
+**/migrations/__pycache__/
+
+
+# MyPy type checking cache
+.mypy_cache/
+
+# Celery task queue
+celerybeat-schedule
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# Logs
+logs/
+*.log
+
+ 
