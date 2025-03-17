@@ -3,34 +3,17 @@
 ## Description
 Coderr is a Django REST Framework (DRF) application for freelance IT services. Users can create accounts, post offers for services, place orders for available services, and submit reviews.
 
-Please do also check out the ASP.NET Core version for this API under: https://github.com/mariuskas1/CoderrAPI/
-
-
----
-
-## Tech Stack
-- **Python**: 3.x
-- **Django**: 5.1.5
-- **Django REST Framework**: 3.15.2
-- **Django Filter**: 24.3
-- **CORS Headers**: 4.6.0
-- **SQLParse**: 0.5.3
-- **ASGIRef**: 3.8.1
-- **Database**: SQLite 
-
----
-
 ## Installation
 
 ### Clone the Repository
 ```sh
-git clone https://github.com/mariuskas1/coderr_backend.git
+git clone https://github.com/anja-gollner/coderr_backend.git
 cd coderr_backend
 ```
 ### Create a Virtual Environment
 ```sh
 python -m venv venv
-source venv/bin/activate  # macOS/Linux
+source venv/bin/activate
 venv\Scripts\activate  # Windows
 ```
 ### Install Dependencies
