@@ -4,7 +4,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from coderr_app.models import Offer, OfferDetails, Order, Review
 from user_auth_app.models import UserProfile
 from .serializers import OfferSerializer, OfferDetailsSerializer, OrderSerializer, CreateOrderSerializer, UpdateOrderStatusSerializer, ReviewSerializer
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .permissions import IsBusinessOwnerOrAdmin, IsCustomerOrAdmin, IsReviewerOrAdmin
 from .pagination import CustomPageNumberPagination  
 from rest_framework.views import APIView
@@ -12,7 +12,7 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from django.db.models import Avg
 from django.db.models import Min, Q
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, AuthenticationFailed
 
 
 
@@ -21,7 +21,7 @@ class OfferViewset(viewsets.ModelViewSet):
     queryset = Offer.objects.all()
     serializer_class = OfferSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    permission_classes = [IsAuthenticated, IsBusinessOwnerOrAdmin]
+    permission_classes = [AllowAny]
     pagination_class = CustomPageNumberPagination
 
     filterset_fields = {
@@ -51,13 +51,66 @@ class OfferViewset(viewsets.ModelViewSet):
         return queryset
 
 
+    def retrieve(self, request, *args, **kwargs):
+        """Gibt 404 zurück, falls das Angebot nicht existiert."""
+        instance = get_object_or_404(Offer, pk=kwargs.get("pk"))
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     def perform_create(self, serializer):
+        """Erstellt ein neues Angebot. Falls nicht authentifiziert, gibt es 401 zurück."""
+        if not self.request.user.is_authenticated:
+            raise AuthenticationFailed({"detail": "Authentifizierung erforderlich."}) #401
+        
+        user_profile = getattr(self.request.user, "profile", None)
+
+        if not user_profile or user_profile.type != "business":
+            raise PermissionDenied({"detail": "Nur Business-Nutzer dürfen Angebote erstellen."}) #403
+
         serializer.save(user=self.request.user)
+
+    def perform_update(self, serializer):
+        """Aktualisiert das Angebot. Falls der Benutzer keine Berechtigung hat, gibt es 403 zurück."""
+        instance = self.get_object()
+
+        if not self.request.user.is_authenticated:
+            raise AuthenticationFailed({"detail": "Authentifizierung erforderlich."})  # 401
+    
+        if instance.user != self.request.user:
+            raise PermissionDenied({"detail": "Du hast keine Berechtigung, dieses Angebot zu bearbeiten."})  # 403
+        serializer.save()
+
+    def handle_exception(self, exc):
+        """Behandelt interne Serverfehler mit 500 Statuscode."""
+        response = super().handle_exception(exc)
+
+        if response is None:
+            return Response({"detail": "Interner Serverfehler"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return response
         
 
 class OfferDetailsViewSet(viewsets.ModelViewSet):
     queryset = OfferDetails.objects.all()
     serializer_class = OfferDetailsSerializer
+
+    def retrieve(self, request, *args, **kwargs):
+        """Gibt das Angebotsdetail zurück. Falls nicht gefunden, gibt es 404 zurück."""
+        if not request.user.is_authenticated:
+            return Response({"detail": "Benutzer ist nicht authentifiziert."}, status=status.HTTP_401_UNAUTHORIZED)  # 401
+
+        offer_detail = get_object_or_404(OfferDetails, pk=kwargs.get("pk"))
+        serializer = self.get_serializer(offer_detail)
+        return Response(serializer.data, status=status.HTTP_200_OK)  # 200 OK
+
+    def handle_exception(self, exc):
+        """Behandelt interne Serverfehler mit 500 Statuscode."""
+        response = super().handle_exception(exc)
+
+        if response is None:
+            return Response({"detail": "Interner Serverfehler"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  # 500
+
+        return response
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -96,6 +149,33 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         serializer.save()
 
+    def create(self, request, *args, **kwargs):
+        """Erstelle eine Bestellung und sende die richtigen Statuscodes zurück."""
+        if not request.user.is_authenticated:
+            return Response({"detail": "Benutzer ist nicht authentifiziert."}, status=status.HTTP_401_UNAUTHORIZED)  # 401
+        serializer = self.get_serializer(data=request.data)
+        
+        if serializer.is_valid():
+            try:
+                order = serializer.save()
+                return Response(
+                    serializer.to_representation(order), 
+                    status=status.HTTP_201_CREATED
+                )
+            except Exception as e:
+                return Response({"detail": "Interner Serverfehler"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  # 500
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)  # 400
+
+    def handle_exception(self, exc):
+        """Behandelt interne Serverfehler mit 500 Statuscode."""
+        response = super().handle_exception(exc)
+        
+        if response is None:
+            return Response({"detail": "Interner Serverfehler"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  # 500
+
+        return response
+    
 
 
 class OrderCountView(APIView):

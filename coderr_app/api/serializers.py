@@ -75,13 +75,13 @@ class OfferSerializer(serializers.ModelSerializer):
 
         return instance
     
+    
     def get_details(self, obj):
         """Return different detail structures for list vs single offer requests."""
         request = self.context.get("request")
         
-        # Handle single offer GET /offers/{id}/ or POST /offers/
         if request and (request.parser_context.get("kwargs", {}).get("pk") or request.method == "POST"):  
-            return OfferDetailsSerializer(obj.offer_details.all(), many=True).data  
+            return OfferDetailsGETSerializer(obj.offer_details.all(), many=True).data  
 
         return OfferDetailsGETSerializer(obj.offer_details.all(), many=True).data
 
@@ -156,6 +156,13 @@ class UpdateOrderStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = ['status']
+    
+    def validate_status(self, value):
+        """Validiert den Status, um sicherzustellen, dass nur zulässige Werte akzeptiert werden."""
+        valid_statuses = ['in_progress', 'completed', 'cancelled']
+        if value not in valid_statuses:
+            raise serializers.ValidationError(f"Ungültiger Status. Erlaubte Werte: {', '.join(valid_statuses)}")
+        return value
 
 
 class ReviewSerializer(serializers.ModelSerializer):

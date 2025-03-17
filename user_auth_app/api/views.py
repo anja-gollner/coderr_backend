@@ -14,7 +14,7 @@ from rest_framework.exceptions import PermissionDenied, NotFound
 
 class UserProfileDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = UserProfileSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [IsAuthenticated]
 
     def get_object(self):
         """
