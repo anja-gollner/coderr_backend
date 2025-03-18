@@ -17,8 +17,6 @@ from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
 
-
-
 class OfferViewset(viewsets.ModelViewSet):
     queryset = Offer.objects.all()
     serializer_class = OfferSerializer
@@ -40,27 +38,22 @@ class OfferViewset(viewsets.ModelViewSet):
             min_price=Min('offer_details__price'),
             min_delivery_time=Min('offer_details__delivery_time_in_days')
         )
-        
         creator_id = self.request.query_params.get('creator_id')
         max_delivery_time = self.request.query_params.get('max_delivery_time')
-
         if creator_id:
             queryset = queryset.filter(user_id=creator_id)
-
         if max_delivery_time:
             try:
                 max_delivery_time = int(max_delivery_time)
             except ValueError:
                 raise ValidationError({"error": "max_delivery_time muss eine Ganzzahl sein."})
             queryset = queryset.filter(offer_details__delivery_time_in_days__lte=max_delivery_time)
-
         return queryset
 
 
     def retrieve(self, request, *args, **kwargs):
         if not self.request.user.is_authenticated:
             raise AuthenticationFailed({"detail": "Authentifizierung erforderlich."})
-        
         instance = get_object_or_404(Offer, pk=kwargs.get("pk"))
         serializer = self.get_serializer(instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -76,19 +69,14 @@ class OfferViewset(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         instance = self.get_object()
-        
         if not self.request.user.is_authenticated:
             raise AuthenticationFailed({"detail": "Authentifizierung erforderlich."})  # 401
-        
         if instance.user != self.request.user:
             raise PermissionDenied({"detail": "Du hast keine Berechtigung, dieses Angebot zu bearbeiten."})  # 403
-        
         user_profile = getattr(self.request.user, "profile", None)
         if not user_profile or user_profile.type != "business":
             raise PermissionDenied({"detail": "Nur Business-Nutzer dürfen ihre Angebote bearbeiten."})  # 403
-        
         serializer.save()
-
 
     def handle_exception(self, exc):
         response = super().handle_exception(exc)
@@ -104,11 +92,9 @@ class OfferDetailsViewSet(viewsets.ModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return Response({"detail": "Benutzer ist nicht authentifiziert."}, status=status.HTTP_401_UNAUTHORIZED)  # 401
-        
         pk = kwargs.get("pk")
         if pk is None or not str(pk).isdigit():  
             return Response({"detail": "Ungültige oder fehlende ID."}, status=status.HTTP_400_BAD_REQUEST)  # 400
-
         offer_detail = get_object_or_404(OfferDetails, pk=kwargs.get("pk"))
         serializer = self.get_serializer(offer_detail)
         return Response(serializer.data, status=status.HTTP_200_OK)  # 200 OK
@@ -153,7 +139,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         user_profile = getattr(self.request.user, 'profile', None)
         if not user_profile or user_profile.type != 'customer':
             raise PermissionDenied("Only customers can create orders.")
-        
         serializer.save()
 
     def create(self, request, *args, **kwargs):
@@ -161,7 +146,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         if not request.user.is_authenticated:
             return Response({"detail": "Benutzer ist nicht authentifiziert."}, status=status.HTTP_401_UNAUTHORIZED)  # 401
         serializer = self.get_serializer(data=request.data)
-        
         if serializer.is_valid():
             try:
                 order = serializer.save()
@@ -173,25 +157,39 @@ class OrderViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "Interner Serverfehler"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  # 500
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)  # 400
+        
+
+    def partial_update(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return Response({"detail": "Authentifizierung erforderlich."}, status=status.HTTP_401_UNAUTHORIZED)
+        user_profile = getattr(request.user, 'profile', None)
+        if not user_profile or user_profile.type != 'business':
+            return Response({"detail": "Nur Business-Nutzer dürfen den Status einer Bestellung aktualisieren."}, status=status.HTTP_403_FORBIDDEN)
+        order = self.get_object()
+        if not order:
+            return Response({"detail": "Die angegebene Bestellung wurde nicht gefunden."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = self.get_serializer(order, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": "Interner Serverfehler."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
     def handle_exception(self, exc):
-        """Behandelt interne Serverfehler mit 500 Statuscode."""
         response = super().handle_exception(exc)
-        
         if response is None:
             return Response({"detail": "Interner Serverfehler"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  # 500
-
         return response
     
-
-
 class OrderCountView(APIView):
     def get(self, request, business_user_id): 
         business_user = get_object_or_404(User, id=business_user_id)
         order_count = Order.objects.filter(business_user=business_user, status='in_progress').count()
         return Response({"order_count": order_count}, status=status.HTTP_200_OK)
     
-
 class CompletedOrderCountView(APIView):
     def get(self, request, business_user_id):
         business_user = get_object_or_404(User, id=business_user_id)

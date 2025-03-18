@@ -91,16 +91,6 @@ class OfferSerializer(serializers.ModelSerializer):
 
         return OfferDetailsGETSerializer(obj.offer_details.all(), many=True).data
 
-    def validate(self, data):
-        """Ensure no offer has a price lower than 75€."""
-        details_data = self.initial_data.get('details', [])
-
-        for detail in details_data:
-            if float(detail.get('price', 0)) < 75:
-                raise serializers.ValidationError({"details": "Price must be at least 75€."})
-
-        return data
-
 
     def get_user_details(self, obj):
         return {
@@ -155,7 +145,7 @@ class CreateOrderSerializer(serializers.Serializer):
             customer_user=customer_user,
             business_user=business_user,
             offer_detail=offer_detail,
-            title=offer_detail.title,
+            title=offer.title,
             revisions=offer_detail.revisions,
             delivery_time_in_days=offer_detail.delivery_time_in_days,
             price=offer_detail.price,
@@ -191,13 +181,20 @@ class UpdateOrderStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = ['status']
-    
+
     def validate_status(self, value):
-        """Validiert den Status, um sicherzustellen, dass nur zulässige Werte akzeptiert werden."""
         valid_statuses = ['in_progress', 'completed', 'cancelled']
         if value not in valid_statuses:
             raise serializers.ValidationError(f"Ungültiger Status. Erlaubte Werte: {', '.join(valid_statuses)}")
         return value
+
+    def update(self, instance, validated_data):
+        instance.status = validated_data.get('status', instance.status)
+        instance.save()
+        return instance  
+
+    def to_representation(self, instance):
+        return OrderSerializer(instance).data
 
 
 class ReviewSerializer(serializers.ModelSerializer):
