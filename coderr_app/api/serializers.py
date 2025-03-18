@@ -4,6 +4,8 @@ from django.contrib.auth.models import User
 from django.db.models import Min
 from django.conf import settings
 from django.urls import reverse
+from rest_framework import status
+from rest_framework.response import Response
 
 
 
@@ -43,14 +45,18 @@ class OfferSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Custom create method to handle nested offer details."""
-        details_data = self.initial_data.get('details', [])
+        details_data = self.initial_data.get('details', [])  
         user = self.context["request"].user  
-        validated_data["user"] = user 
-        offer = Offer.objects.create(**validated_data)
+        validated_data["user"] = user  
+
+        offer = Offer.objects.create(**validated_data) 
 
         for detail_data in details_data:
             OfferDetails.objects.create(offer=offer, **detail_data)
-        return offer  
+
+        return offer 
+
+  
     
     def update(self, instance, validated_data):
         """Custom update method to allow partial updates and handle nested OfferDetails."""
@@ -79,11 +85,22 @@ class OfferSerializer(serializers.ModelSerializer):
     def get_details(self, obj):
         """Return different detail structures for list vs single offer requests."""
         request = self.context.get("request")
-        
-        if request and (request.parser_context.get("kwargs", {}).get("pk") or request.method == "POST"):  
-            return OfferDetailsGETSerializer(obj.offer_details.all(), many=True).data  
+
+        if request and request.method in ["POST", "PUT"]:
+            return OfferDetailsSerializer(obj.offer_details.all(), many=True).data  
 
         return OfferDetailsGETSerializer(obj.offer_details.all(), many=True).data
+
+    def validate(self, data):
+        """Ensure no offer has a price lower than 75€."""
+        details_data = self.initial_data.get('details', [])
+
+        for detail in details_data:
+            if float(detail.get('price', 0)) < 75:
+                raise serializers.ValidationError({"details": "Price must be at least 75€."})
+
+        return data
+
 
     def get_user_details(self, obj):
         return {
@@ -133,7 +150,8 @@ class CreateOrderSerializer(serializers.Serializer):
         customer_user = self.context['request'].user
         business_user = offer.user  
 
-        order = Order.objects.create(
+        order = Order(
+            id=offer_detail.id,
             customer_user=customer_user,
             business_user=business_user,
             offer_detail=offer_detail,
@@ -145,11 +163,28 @@ class CreateOrderSerializer(serializers.Serializer):
             offer_type=offer_detail.offer_type,
             status='in_progress'
         )
+        order.save(force_insert=True)
+
         return order
-    
+
     def to_representation(self, instance):
-        """Ensure the full order details are returned in the response."""
-        return OrderSerializer(instance).data 
+        """ Ensure the full order details are returned in the response without offer_detail """
+        data = {
+            "id": instance.id,
+            "customer_user": instance.customer_user.id,
+            "business_user": instance.business_user.id,
+            "title": instance.title,
+            "revisions": instance.revisions,
+            "delivery_time_in_days": instance.delivery_time_in_days,
+            "price": instance.price,
+            "features": instance.features,
+            "offer_type": instance.offer_type,
+            "status": instance.status,
+            "created_at": instance.created_at,
+            "updated_at": instance.updated_at,
+        }
+        return data
+
     
     
 class UpdateOrderStatusSerializer(serializers.ModelSerializer):

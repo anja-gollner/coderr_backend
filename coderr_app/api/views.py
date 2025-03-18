@@ -14,6 +14,7 @@ from django.db.models import Avg
 from django.db.models import Min, Q
 from rest_framework.exceptions import PermissionDenied, AuthenticationFailed
 from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
 
 
 
@@ -36,10 +37,10 @@ class OfferViewset(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Offer.objects.annotate(
-            min_price=Min('offer_details__price'), 
+            min_price=Min('offer_details__price'),
             min_delivery_time=Min('offer_details__delivery_time_in_days')
         )
-
+        
         creator_id = self.request.query_params.get('creator_id')
         max_delivery_time = self.request.query_params.get('max_delivery_time')
 
@@ -47,47 +48,52 @@ class OfferViewset(viewsets.ModelViewSet):
             queryset = queryset.filter(user_id=creator_id)
 
         if max_delivery_time:
+            try:
+                max_delivery_time = int(max_delivery_time)
+            except ValueError:
+                raise ValidationError({"error": "max_delivery_time muss eine Ganzzahl sein."})
             queryset = queryset.filter(offer_details__delivery_time_in_days__lte=max_delivery_time)
 
         return queryset
 
 
     def retrieve(self, request, *args, **kwargs):
-        """Gibt 404 zurück, falls das Angebot nicht existiert."""
+        if not self.request.user.is_authenticated:
+            raise AuthenticationFailed({"detail": "Authentifizierung erforderlich."})
+        
         instance = get_object_or_404(Offer, pk=kwargs.get("pk"))
         serializer = self.get_serializer(instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
 
     def perform_create(self, serializer):
-        """Erstellt ein neues Angebot. Falls nicht authentifiziert, gibt es 401 zurück."""
         if not self.request.user.is_authenticated:
             raise AuthenticationFailed({"detail": "Authentifizierung erforderlich."}) #401
-        
         user_profile = getattr(self.request.user, "profile", None)
-
         if not user_profile or user_profile.type != "business":
             raise PermissionDenied({"detail": "Nur Business-Nutzer dürfen Angebote erstellen."}) #403
-
         serializer.save(user=self.request.user)
 
     def perform_update(self, serializer):
-        """Aktualisiert das Angebot. Falls der Benutzer keine Berechtigung hat, gibt es 403 zurück."""
         instance = self.get_object()
-
+        
         if not self.request.user.is_authenticated:
             raise AuthenticationFailed({"detail": "Authentifizierung erforderlich."})  # 401
-    
+        
         if instance.user != self.request.user:
             raise PermissionDenied({"detail": "Du hast keine Berechtigung, dieses Angebot zu bearbeiten."})  # 403
+        
+        user_profile = getattr(self.request.user, "profile", None)
+        if not user_profile or user_profile.type != "business":
+            raise PermissionDenied({"detail": "Nur Business-Nutzer dürfen ihre Angebote bearbeiten."})  # 403
+        
         serializer.save()
 
-    def handle_exception(self, exc):
-        """Behandelt interne Serverfehler mit 500 Statuscode."""
-        response = super().handle_exception(exc)
 
+    def handle_exception(self, exc):
+        response = super().handle_exception(exc)
         if response is None:
             return Response({"detail": "Interner Serverfehler"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
         return response
         
 
@@ -96,21 +102,21 @@ class OfferDetailsViewSet(viewsets.ModelViewSet):
     serializer_class = OfferDetailsSerializer
 
     def retrieve(self, request, *args, **kwargs):
-        """Gibt das Angebotsdetail zurück. Falls nicht gefunden, gibt es 404 zurück."""
         if not request.user.is_authenticated:
             return Response({"detail": "Benutzer ist nicht authentifiziert."}, status=status.HTTP_401_UNAUTHORIZED)  # 401
+        
+        pk = kwargs.get("pk")
+        if pk is None or not str(pk).isdigit():  
+            return Response({"detail": "Ungültige oder fehlende ID."}, status=status.HTTP_400_BAD_REQUEST)  # 400
 
         offer_detail = get_object_or_404(OfferDetails, pk=kwargs.get("pk"))
         serializer = self.get_serializer(offer_detail)
         return Response(serializer.data, status=status.HTTP_200_OK)  # 200 OK
 
     def handle_exception(self, exc):
-        """Behandelt interne Serverfehler mit 500 Statuscode."""
         response = super().handle_exception(exc)
-
         if response is None:
             return Response({"detail": "Interner Serverfehler"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  # 500
-
         return response
 
 
@@ -216,10 +222,9 @@ class ReviewViewSet(viewsets.ModelViewSet):
 
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['business_user', 'reviewer'] 
-    ordering_fields = ['rating', 'created_at'] 
+    ordering_fields = ['rating', 'updated_at'] 
 
     def get_permissions(self):
-        """Apply different permissions based on the action."""
         if self.action in ['create']:
             return [IsCustomerOrAdmin()]
         elif self.action in ['update', 'partial_update', 'destroy']:
@@ -227,29 +232,27 @@ class ReviewViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]  
 
     def partial_update(self, request, *args, **kwargs):
-        """Restrict editable fields to only 'rating' and 'description'."""
         allowed_fields = {'rating', 'description'}
         mutable_data = request.data.copy()
         request._full_data = {key: value for key, value in mutable_data.items() if key in allowed_fields}
         return super().partial_update(request, *args, **kwargs)
     
     def perform_create(self, serializer):
-        """Automatically assign the logged-in user as the reviewer."""
         business_user = serializer.validated_data['business_user']
-
         if Review.objects.filter(reviewer=self.request.user, business_user=business_user).exists():
             raise serializers.ValidationError({"detail": "Du hast bereits eine Bewertung für diesen Geschäftsbenutzer abgegeben."})
-     
         serializer.save(reviewer=self.request.user)
 
     def get_queryset(self):
-        """Allow filtering by business_user_id manually"""
         queryset = super().get_queryset()
         business_user_id = self.request.query_params.get('business_user_id')
+        reviewer_id = self.request.query_params.get('reviewer_id')
 
         if business_user_id:
             queryset = queryset.filter(business_user_id=business_user_id)
-
+        if reviewer_id:
+            queryset = queryset.filter(reviewer_id=reviewer_id)
         return queryset
+    
     
     

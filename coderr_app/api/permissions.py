@@ -13,19 +13,18 @@ class IsBusinessOwnerOrAdmin(permissions.BasePermission):
         if request.method == 'POST':
             user_profile = getattr(request.user, 'profile', None)
             return (
-            request.user.is_authenticated and 
-            user_profile and 
-            user_profile.type == 'business'
-        )
-
-        return True 
+                request.user.is_authenticated and 
+                user_profile and 
+                user_profile.type == 'business'
+            )
+        return True
 
     def has_object_permission(self, request, view, obj):
         """ Object-level permission check (applies to update/delete). """
         if request.method in permissions.SAFE_METHODS:
-            return True  
+            return True
         
-        return obj.user == request.user or request.user.is_staff
+        return obj.business_user == request.user or request.user.is_staff
 
 
 class IsCustomerOrAdmin(permissions.BasePermission):
@@ -46,8 +45,11 @@ class IsCustomerOrAdmin(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         """ Object-level permission check (applies to update/delete). """
         if request.method in permissions.SAFE_METHODS:
-            return True 
-        return obj.user == request.user or request.user.is_staff
+            return True
+
+        # Here we use customer_user instead of obj.user
+        return obj.customer_user == request.user or request.user.is_staff
+
     
 
 class IsReviewerOrAdmin(permissions.BasePermission):
@@ -59,6 +61,7 @@ class IsReviewerOrAdmin(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return True
         
+        # Here we use reviewer instead of obj.user
         return obj.reviewer == request.user or request.user.is_staff
-    
+
     
