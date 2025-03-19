@@ -6,6 +6,7 @@ from django.conf import settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 
 
 class OfferDetailsSerializer(serializers.ModelSerializer):
@@ -60,12 +61,15 @@ class OfferSerializer(serializers.ModelSerializer):
         user = self.context["request"].user  
         validated_data["user"] = user  
 
-        # Check if all required types are present
         required_types = {"basic", "standard", "premium"}
-        existing_types = {detail["offer_type"] for detail in details_data}
+        existing_types = {detail.get("offer_type") for detail in details_data}
+
+        for detail in details_data:
+            if "offer_type" not in detail:
+                raise ValidationError({"details": "Each offer detail must include an 'offer_type' field."})
 
         if not required_types.issubset(existing_types):
-            raise serializers.ValidationError(
+            raise ValidationError(
                 {"details": "Offers must include 'basic', 'standard', and 'premium' offer types."}
             )
 
@@ -74,10 +78,9 @@ class OfferSerializer(serializers.ModelSerializer):
         for detail_data in details_data:
             OfferDetails.objects.create(offer=offer, **detail_data)
 
-        return offer 
+        return offer
 
-  
-    
+
     def update(self, instance, validated_data):
         """Custom update method to allow partial updates and handle nested OfferDetails."""
 

@@ -95,6 +95,18 @@ class OfferViewset(viewsets.ModelViewSet):
             return Response({"detail": "Interner Serverfehler"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return response
         
+    def perform_destroy(self, instance):
+        """Custom delete logic to prevent customers from deleting offers."""
+        user_profile = getattr(self.request.user, "profile", None)
+        if user_profile.type == 'customer':
+            raise PermissionDenied("Customers are not allowed to delete offers.")
+        instance.delete()
+
+    def destroy(self, request, *args, **kwargs):
+        """Override to check if the user is authenticated before attempting to delete."""
+        if not request.user.is_authenticated:
+            raise AuthenticationFailed("You must be logged in to perform this action.")
+        return super().destroy(request, *args, **kwargs)
 
 class OfferDetailsViewSet(viewsets.ModelViewSet):
     queryset = OfferDetails.objects.all()
