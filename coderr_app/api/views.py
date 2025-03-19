@@ -31,24 +31,35 @@ class OfferViewset(viewsets.ModelViewSet):
         'offer_details__delivery_time_in_days': ['exact', 'lte', 'gte']
     }
     search_fields = ['title', 'description']
-    ordering_fields = ['min_price', 'updated_at']
+    ordering_fields = ['updated_at']
 
     def get_queryset(self):
         queryset = Offer.objects.annotate(
-            min_price=Min('offer_details__price'),
-            min_delivery_time=Min('offer_details__delivery_time_in_days')
+            min_price=Min('offer_details__price')
         )
         creator_id = self.request.query_params.get('creator_id')
         max_delivery_time = self.request.query_params.get('max_delivery_time')
+        min_price = self.request.query_params.get('min_price')
+
         if creator_id:
             queryset = queryset.filter(user_id=creator_id)
+
         if max_delivery_time:
             try:
                 max_delivery_time = int(max_delivery_time)
             except ValueError:
                 raise ValidationError({"error": "max_delivery_time muss eine Ganzzahl sein."})
             queryset = queryset.filter(offer_details__delivery_time_in_days__lte=max_delivery_time)
+
+        if min_price:
+            try:
+                min_price = float(min_price)
+            except ValueError:
+                raise ValidationError({"error": "min_price muss eine Zahl sein."})
+            queryset = queryset.filter(min_price__gte=min_price)
+
         return queryset
+
 
 
     def retrieve(self, request, *args, **kwargs):
@@ -185,12 +196,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         return response
     
 class OrderCountView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, business_user_id): 
         business_user = get_object_or_404(User, id=business_user_id)
         order_count = Order.objects.filter(business_user=business_user, status='in_progress').count()
         return Response({"order_count": order_count}, status=status.HTTP_200_OK)
     
 class CompletedOrderCountView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, business_user_id):
         business_user = get_object_or_404(User, id=business_user_id)
         completed_order_count = Order.objects.filter(business_user=business_user, status='completed').count()

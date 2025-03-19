@@ -8,9 +8,6 @@ from rest_framework import status
 from rest_framework.response import Response
 
 
-
-
-
 class OfferDetailsSerializer(serializers.ModelSerializer):
     class Meta:
         model = OfferDetails
@@ -33,23 +30,46 @@ class OfferDetailsGETSerializer(serializers.ModelSerializer):
 class OfferSerializer(serializers.ModelSerializer):
     details = serializers.SerializerMethodField()
     user_details = serializers.SerializerMethodField()
-    min_price = serializers.FloatField(read_only=True)
-    min_delivery_time = serializers.IntegerField(read_only=True)
+    min_price = serializers.SerializerMethodField()
+    min_delivery_time = serializers.SerializerMethodField()
     image = serializers.FileField(required=False, allow_null=True)
 
     class Meta:
         model = Offer
-        fields = '__all__'
+        fields = ['id', 'user', 'title', 'image', 'description', 'created_at', 'updated_at', 'details', 'min_price', 'min_delivery_time', 'user_details']
         extra_kwargs = {"user": {"read_only": True}}
+
+    def to_representation(self, instance):
+        """Dynamisch anpassen, ob user_details oder nur user-ID angezeigt wird."""
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if request and request.parser_context["view"].action == "list":
+            data["user_details"] = {
+                "first_name": instance.user.first_name,
+                "last_name": instance.user.last_name,
+                "username": instance.user.username
+            }
+        else:
+            data.pop("user_details", None)
+        return data
 
 
     def create(self, validated_data):
-        """Custom create method to handle nested offer details."""
+        """Custom create method to ensure basic, standard, and premium details exist."""
         details_data = self.initial_data.get('details', [])  
         user = self.context["request"].user  
         validated_data["user"] = user  
 
-        offer = Offer.objects.create(**validated_data) 
+        # Check if all required types are present
+        required_types = {"basic", "standard", "premium"}
+        existing_types = {detail["offer_type"] for detail in details_data}
+
+        if not required_types.issubset(existing_types):
+            raise serializers.ValidationError(
+                {"details": "Offers must include 'basic', 'standard', and 'premium' offer types."}
+            )
+
+        offer = Offer.objects.create(**validated_data)
 
         for detail_data in details_data:
             OfferDetails.objects.create(offer=offer, **detail_data)
