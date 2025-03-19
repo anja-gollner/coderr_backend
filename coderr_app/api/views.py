@@ -59,7 +59,28 @@ class OfferViewset(viewsets.ModelViewSet):
             queryset = queryset.filter(min_price__gte=min_price)
 
         return queryset
+    
+    def update(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            raise AuthenticationFailed({"detail": "Authentifizierung erforderlich."})  # 401
 
+        instance = get_object_or_404(Offer, pk=kwargs.get("pk"))  
+
+        if instance.user != request.user:
+            raise PermissionDenied({"detail": "Du hast keine Berechtigung, dieses Angebot zu bearbeiten."})  # 403
+
+        user_profile = getattr(request.user, "profile", None)
+        if not user_profile or user_profile.type != "business":
+            raise PermissionDenied({"detail": "Nur Business-Nutzer dürfen ihre Angebote bearbeiten."})  # 403
+
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        updated_instance = self.get_queryset().get(pk=instance.pk)
+        response_serializer = self.get_serializer(updated_instance)
+
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
     def retrieve(self, request, *args, **kwargs):
@@ -95,18 +116,25 @@ class OfferViewset(viewsets.ModelViewSet):
             return Response({"detail": "Interner Serverfehler"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return response
         
-    def perform_destroy(self, instance):
-        """Custom delete logic to prevent customers from deleting offers."""
-        user_profile = getattr(self.request.user, "profile", None)
-        if user_profile.type == 'customer':
-            raise PermissionDenied("Customers are not allowed to delete offers.")
-        instance.delete()
-
     def destroy(self, request, *args, **kwargs):
         """Override to check if the user is authenticated before attempting to delete."""
+    
+        instance = get_object_or_404(Offer, pk=kwargs.get("pk"))  
+
         if not request.user.is_authenticated:
-            raise AuthenticationFailed("You must be logged in to perform this action.")
+            raise AuthenticationFailed("You must be logged in to perform this action.")  # 401
+
         return super().destroy(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        """Custom delete logic to prevent customers from deleting offers."""
+
+        user_profile = getattr(self.request.user, "profile", None)
+        if not user_profile or user_profile.type == 'customer':
+            raise PermissionDenied("Customers are not allowed to delete offers.")  # 403
+
+        instance.delete()
+
 
 class OfferDetailsViewSet(viewsets.ModelViewSet):
     queryset = OfferDetails.objects.all()
@@ -187,7 +215,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Authentifizierung erforderlich."}, status=status.HTTP_401_UNAUTHORIZED)
         user_profile = getattr(request.user, 'profile', None)
         if not user_profile or user_profile.type != 'business':
-            return Response({"detail": "Nur Business-Nutzer dürfen den Status einer Bestellung aktualisieren."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "Nur Business-Nutzer dürfen den Status einer Bestellung aktualisieren."}, status=status.HTTP_404_NOT_FOUND)
         order = self.get_object()
         if not order:
             return Response({"detail": "Die angegebene Bestellung wurde nicht gefunden."}, status=status.HTTP_404_NOT_FOUND)
