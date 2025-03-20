@@ -78,11 +78,17 @@ class OfferViewset(viewsets.ModelViewSet):
 
         details_data = request.data.get('details', [])
 
-        required_types = {"basic", "standard", "premium"}
-        existing_types = {detail.get("offer_type") for detail in details_data}
-
-        if not required_types.issubset(existing_types):
-            raise ValidationError({"detail": "Das Angebot muss die Offer-Typen 'basic', 'standard' und 'premium' enthalten."})  # 400
+        if details_data is not None:
+            existing_details = {detail.offer_type: detail for detail in instance.offer_details.all()}
+            for detail_data in details_data:
+                offer_type = detail_data.get("offer_type")
+                if offer_type in existing_details:
+                    detail_instance = existing_details[offer_type]
+                    for attr, value in detail_data.items():
+                        setattr(detail_instance, attr, value)
+                    detail_instance.save()
+                else:
+                    raise ValidationError({"detail": f"Offer type '{offer_type}' existiert nicht für dieses Angebot."})
 
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -218,24 +224,45 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)  # 400
         
 
+    # def partial_update(self, request, *args, **kwargs):
+    #     if not request.user.is_authenticated:
+    #         return Response({"detail": "Authentifizierung erforderlich."}, status=status.HTTP_401_UNAUTHORIZED)
+    #     user_profile = getattr(request.user, 'profile', None)
+    #     if not user_profile or user_profile.type != 'business':
+    #         return Response({"detail": "Nur Business-Nutzer dürfen den Status einer Bestellung aktualisieren."}, status=status.HTTP_403_FORBIDDEN)
+    #     order = self.get_object()
+    #     if not order:
+    #         return Response({"detail": "Die angegebene Bestellung wurde nicht gefunden."}, status=status.HTTP_404_NOT_FOUND)
+    #     serializer = self.get_serializer(order, data=request.data, partial=True)
+    #     if not serializer.is_valid():
+    #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    #     try:
+    #         serializer.save()
+    #         return Response(serializer.data, status=status.HTTP_200_OK)
+    #     except Exception as e:
+    #         return Response({"detail": "Interner Serverfehler."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     def partial_update(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return Response({"detail": "Authentifizierung erforderlich."}, status=status.HTTP_401_UNAUTHORIZED)
-        user_profile = getattr(request.user, 'profile', None)
-        if not user_profile or user_profile.type != 'business':
-            return Response({"detail": "Nur Business-Nutzer dürfen den Status einer Bestellung aktualisieren."}, status=status.HTTP_403_FORBIDDEN)
+        
         order = self.get_object()
         if not order:
             return Response({"detail": "Die angegebene Bestellung wurde nicht gefunden."}, status=status.HTTP_404_NOT_FOUND)
+        
+        user_profile = getattr(request.user, 'profile', None)
+        if not user_profile or user_profile.type != 'business':
+            return Response({"detail": "Nur Business-Nutzer dürfen den Status einer Bestellung aktualisieren."}, status=status.HTTP_403_FORBIDDEN)
+        
         serializer = self.get_serializer(order, data=request.data, partial=True)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
         try:
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"detail": "Interner Serverfehler."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
     def handle_exception(self, exc):
         response = super().handle_exception(exc)
