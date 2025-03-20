@@ -87,7 +87,7 @@ class OfferViewset(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
-        
+
         updated_instance = self.get_queryset().get(pk=instance.pk)
         response_serializer = self.get_serializer(updated_instance)
 
@@ -131,22 +131,17 @@ class OfferViewset(viewsets.ModelViewSet):
         
     def destroy(self, request, *args, **kwargs):
         """Override to check if the user is authenticated before attempting to delete."""
-    
-        instance = get_object_or_404(Offer, pk=kwargs.get("pk"))  
 
         if not request.user.is_authenticated:
             raise AuthenticationFailed("You must be logged in to perform this action.")  # 401
 
-        return super().destroy(request, *args, **kwargs)
-
-    def perform_destroy(self, instance):
-        """Custom delete logic to prevent customers from deleting offers."""
-
         user_profile = getattr(self.request.user, "profile", None)
         if not user_profile or user_profile.type == 'customer':
             raise PermissionDenied("Customers are not allowed to delete offers.")  # 403
+        
+        instance = get_object_or_404(Offer, pk=kwargs.get("pk"))  
 
-        instance.delete()
+        return super().destroy(request, *args, **kwargs)
 
 
 class OfferDetailsViewSet(viewsets.ModelViewSet):
@@ -228,7 +223,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Authentifizierung erforderlich."}, status=status.HTTP_401_UNAUTHORIZED)
         user_profile = getattr(request.user, 'profile', None)
         if not user_profile or user_profile.type != 'business':
-            return Response({"detail": "Nur Business-Nutzer dürfen den Status einer Bestellung aktualisieren."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "Nur Business-Nutzer dürfen den Status einer Bestellung aktualisieren."}, status=status.HTTP_403_FORBIDDEN)
         order = self.get_object()
         if not order:
             return Response({"detail": "Die angegebene Bestellung wurde nicht gefunden."}, status=status.HTTP_404_NOT_FOUND)
