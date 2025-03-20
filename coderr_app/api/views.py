@@ -15,6 +15,7 @@ from django.db.models import Min, Q
 from rest_framework.exceptions import PermissionDenied, AuthenticationFailed
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound
 
 
 class OfferViewset(viewsets.ModelViewSet):
@@ -61,6 +62,8 @@ class OfferViewset(viewsets.ModelViewSet):
         return queryset
     
     def update(self, request, *args, **kwargs):
+        """Override to check authentication, permissions, and required offer types before updating."""
+
         if not request.user.is_authenticated:
             raise AuthenticationFailed({"detail": "Authentifizierung erforderlich."})  # 401
 
@@ -73,14 +76,24 @@ class OfferViewset(viewsets.ModelViewSet):
         if not user_profile or user_profile.type != "business":
             raise PermissionDenied({"detail": "Nur Business-Nutzer dürfen ihre Angebote bearbeiten."})  # 403
 
+        details_data = request.data.get('details', [])
+
+        required_types = {"basic", "standard", "premium"}
+        existing_types = {detail.get("offer_type") for detail in details_data}
+
+        if not required_types.issubset(existing_types):
+            raise ValidationError({"detail": "Das Angebot muss die Offer-Typen 'basic', 'standard' und 'premium' enthalten."})  # 400
+
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
-
+        
         updated_instance = self.get_queryset().get(pk=instance.pk)
         response_serializer = self.get_serializer(updated_instance)
 
         return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
 
 
     def retrieve(self, request, *args, **kwargs):
